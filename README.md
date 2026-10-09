@@ -318,21 +318,3 @@ Windows uses a process group and Job Object to clean up descendants.
 Process detection requires permission to inspect executable paths. Inaccessible
 processes and processes in other containers can escape detection. Use one
 launcher at a time; the final recheck is not a lock against simultaneous launches.
-
-## Verification
-
-From the launcher folder on Linux:
-
-```sh
-python3 -m unittest -v test_launcher.py test_platform.py
-```
-
-On Windows:
-
-```powershell
-py -3 -m unittest -v test_platform.py
-```
-
-Native Windows checks are skipped on Linux. Interactive Windows verification
-should also cover arrow selection, the editor, scrollbar dragging, model popup
-cancel/switch, S returning to selection, resizing, and R during generation.
