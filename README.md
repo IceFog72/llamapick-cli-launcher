@@ -1,5 +1,8 @@
 # ⛏️ LlamaPick CLI Launcher
 
+<img width="1121" height="896" alt="image" src="https://github.com/user-attachments/assets/5dceb2b7-b8a2-4d75-89e3-62d63e0fc1fb" />
+
+
 LlamaPick CLI Launcher manages multiple llama.cpp forks, GGUF models, and flag
 presets from your terminal. Pick a setup with the arrow keys, run its server
 inside a log pane, and update or build each fork using its own commands.
