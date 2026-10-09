@@ -1,5 +1,7 @@
 # ⛏️ LlamaPick CLI Launcher
 
+<img width="841" height="227" alt="image" src="https://github.com/user-attachments/assets/07b44d1c-7e26-43bc-a2b2-7466a30316f6" />
+
 <img width="1121" height="896" alt="image" src="https://github.com/user-attachments/assets/5dceb2b7-b8a2-4d75-89e3-62d63e0fc1fb" />
 
 
