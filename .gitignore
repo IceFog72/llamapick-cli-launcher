@@ -1,3 +1,5 @@
 llama.ini
 __pycache__/
 *.py[cod]
+test_launcher.py
+test_platform.py

@@ -209,9 +209,18 @@ flags, model paths, and environment variables take effect on the next launch.
 A failed reload leaves the current server and view running and reports the error
 in the footer. If the INI was deleted, reload recreates a starter.
 
-If the server exits by itself, its final output and exit code remain visible
-until Esc/q closes the view. With redirected input or output, the server runs
-in foreground pass-through mode instead of the interactive wrapper.
+If the server exits by itself, the status updates automatically. An unexpected
+nonzero exit shows a red **FAILED** header and footer with its exit code; Linux
+signal exits also name the signal, and Windows exception codes include their
+hexadecimal value. A final launcher log entry records the result. The stopped
+view no longer shows live throughput or a LIVE marker, and retains your logs
+and scroll position. A model popup opened while the server was running closes
+if that server exits, revealing the failure.
+
+Press **S** to return to preset selection, **C** to choose another setup, or
+**Esc/q** to close the view. A requested stop is not shown as a failure. With
+redirected input or output, the server runs in foreground pass-through mode
+instead of the interactive wrapper.
 
 ## Update and build
 

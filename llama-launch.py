@@ -278,6 +278,7 @@ BASE = "\x1b[48;2;0;0;0m\x1b[38;2;220;225;230m"
 BORDER = "\x1b[38;2;80;145;160m"
 MUTED = "\x1b[38;2;130;145;155m"
 GREEN = "\x1b[38;2;135;220;145m"
+RED = "\x1b[38;2;255;105;105m"
 GOLD = "\x1b[38;2;225;190;110m"
 ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\)|[@-_])")
 
@@ -531,7 +532,7 @@ def server_address(command, environment=None):
 def log_color(line):
     upper = line.upper()
     if re.search(r"\b(ERROR|FATAL|FAILED|FAIL)\b|(?:^|\s)E\s", upper):
-        return "\x1b[38;2;255;105;105m"
+        return RED
     if re.search(r"\b(WARN|WARNING)\b|(?:^|\s)W\s", upper):
         return GOLD
     if re.search(r"tokens? (?:per second|/s)|tok/s|eval time", line, re.I):
@@ -865,6 +866,23 @@ class SpeedSampler:
             self.thread.join(timeout=1)
 
 
+def server_exit_text(code, stopped=False):
+    if stopped:
+        return "Server stopped"
+    if code == 0:
+        return "Exited: 0"
+    if not platform.WINDOWS and code < 0:
+        try:
+            cause = signal.Signals(-code).name
+        except ValueError:
+            cause = f"signal {-code}"
+        return f"Server failed: {cause} (exit {128 - code})"
+    detail = f"exit {code}"
+    if platform.WINDOWS and (code < 0 or code >= 0x80000000):
+        detail += f" (0x{code & 0xffffffff:08X})"
+    return f"Server failed: {detail}"
+
+
 class ServerSession:
     """Keep subprocess, output, and shutdown ownership outside reloadable UI code."""
     def __init__(self, command, cwd, environment, title, stage=None):
@@ -893,6 +911,15 @@ class ServerSession:
                 self.eof = True
                 break
             self.history.feed(data)
+        code = self.process.poll()
+        if code is not None:
+            if getattr(self, "sampler", None) is not None:
+                self.sampler.live_prompt = self.sampler.live_generation = None
+            if self.eof and not getattr(self, "exit_recorded", False) and self.title == "llama-server output":
+                self.exit_recorded = True
+                self.notice = ""
+                level = "ERROR" if code != 0 and self.stop_deadline is None else "INFO"
+                self.history.add(f"{level} [launcher] {server_exit_text(code, self.stop_deadline is not None)}")
 
     def signal_group(self, sig):
         platform.signal_process(self.process, sig, getattr(self, "job", None))
@@ -923,13 +950,20 @@ class ServerSession:
 
 
 def server_frame(session, width, height):
+    code = session.process.poll()
+    failed = code is not None and code != 0 and session.stop_deadline is None
+    server = session.title == "llama-server output"
     if width < 40 or height < 10:
+        if server and code is not None:
+            message = server_exit_text(code, session.stop_deadline is not None)
+            lines = textwrap.wrap(message, width=max(1, width - 2))
+            return [(RED if failed else GREEN) + line for line in lines[:max(1, height)]], [], 1, 0
         return [MUTED + fit_text("Enlarge terminal (40x10). q stops.", max(1, width - 2))], [], 1, 0
     frame_width = width - 2
     inner, log_width = frame_width - 4, frame_width - 6
-    actions = "S stop/select   " if session.title == "llama-server output" else ""
-    if session.title == "llama-server output" and getattr(session, "config_path", True):
-        actions += "C change model   "
+    actions = ("S selection   " if code is not None else "S stop/select   ") if server else ""
+    if server and getattr(session, "config_path", True):
+        actions += "C choose model   " if code is not None else "C change model   "
     controls = textwrap.wrap("↑/↓ scroll   " + actions + "R reload   q/Esc quit", width=inner)
     rate = lambda value: f"{value:.1f}" if value is not None else "—"
     history = session.history
@@ -949,16 +983,20 @@ def server_frame(session, width, height):
         progress = getattr(history, "build_progress", None)
         if progress is not None and status.startswith("Building"):
             status += f"  {progress}%"
-    if session.process.poll() is not None:
-        status = f"Exited: {session.process.returncode}   q/Esc close"
-    if not session.notice:
+    if code is not None:
+        status = server_exit_text(code, session.stop_deadline is not None) if server else f"Exited: {code}   q/Esc close"
+    if code is None and not session.notice:
         status += f" | {'LIVE' if session.viewport.anchor is None else 'PAUSED'}"
     status_lines = textwrap.wrap(status, width=inner, break_on_hyphens=False)
     budget = max(1, height - len(controls) - 5)
     status_lines = status_lines[:budget]
     notice_lines = textwrap.wrap(session.notice, width=inner, break_on_hyphens=False)
     status_lines = notice_lines[:max(0, budget - len(status_lines))] + status_lines
-    header = [edge(frame_width, "╭", "╮", f" {session.title} "),
+    title = session.title + (" — FAILED" if failed else "")
+    title_line = edge(frame_width, "╭", "╮", f" {title} ")
+    if failed:
+        title_line = title_line.replace(BORDER, RED)
+    header = [title_line,
               *[framed(line, inner, MUTED) for line in controls],
               edge(frame_width, "├", "┤")]
     available = max(1, height - len(header) - len(status_lines) - 2)
@@ -972,7 +1010,7 @@ def server_frame(session, width, height):
         scroll = BASE + "██" if thumb_start <= index < thumb_start + thumb_size else MUTED + "│ "
         lines.append(BORDER + "│ " + color + fit_text(text, log_width)
                      + scroll + BORDER + " │")
-    lines += [edge(frame_width, "├", "┤"), *[framed(line, inner, GREEN) for line in status_lines],
+    lines += [edge(frame_width, "├", "┤"), *[framed(line, inner, RED if failed else GREEN) for line in status_lines],
               edge(frame_width, "╰", "╯")]
     return lines, rows, available, len(header) + 1
 
@@ -1030,9 +1068,12 @@ def popup_frame(session, width, height, presets, models, selected):
 def model_popup(session, screen):
     instances, models, presets, _ = read_config(Path(session.config_path).resolve(), announce=False)
     names, selected = list(presets), 0
+    was_running = session.process.poll() is None
     while True:
         # Keep draining the old process while the popup is open.
         session.drain()
+        if was_running and session.process.poll() is not None:
+            return None
         if session.process.poll() is None and getattr(session, "sampler", None) is not None:
             session.sampler.step(session.history)
         size = os.get_terminal_size(sys.stdout.fileno())
@@ -1176,8 +1217,11 @@ def run_process(command, cwd, environment, title, config_path, stage=None):
                     screen.__class__ = namespace["TerminalScreen"]
                     view = namespace["server_view"]
                     session.history.rows_cache = None
-                    session.notice = ("Launcher code reloaded; server PID unchanged" if title == "llama-server output"
-                                      else "Launcher code reloaded; process PID unchanged")
+                    if session.process.poll() is not None:
+                        session.notice = "Launcher code reloaded; process has exited"
+                    else:
+                        session.notice = ("Launcher code reloaded; server PID unchanged" if title == "llama-server output"
+                                          else "Launcher code reloaded; process PID unchanged")
                     screen.previous = ()
                 except Exception as error:
                     session.notice = f"Reload failed: {error}"
